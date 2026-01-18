@@ -38,25 +38,31 @@ function App() {
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    await fetch('http://localhost:3001/items', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        year: Number(form.year),
-        make: form.make,
-        model: form.model,
-        vin: form.vin,
-        miles: Number(form.miles),
-        location_address: form.location_address,
-        seller_account_number: form.seller_account_number,
-        data_capture_status: 'todo',
-        review_status: 'todo'
-      })
-    })
-    setForm({ year: '', make: '', model: '', vin: '', miles: '', location_address: '', seller_account_number: '' })
-    fetchItems()
+  e.preventDefault()
+  
+  if (!form.year || !form.make || !form.model) {
+    alert('Year, Make, and Model are required')
+    return
   }
+  
+  await fetch('http://localhost:3001/items', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      year: Number(form.year),
+      make: form.make,
+      model: form.model,
+      vin: form.vin,
+      miles: Number(form.miles) || null,
+      location_address: form.location_address,
+      seller_account_number: form.seller_account_number,
+      data_capture_status: 'todo',
+      review_status: 'todo'
+    })
+  })
+  setForm({ year: '', make: '', model: '', vin: '', miles: '', location_address: '', seller_account_number: '' })
+  fetchItems()
+}
 
   return (
     <div>
