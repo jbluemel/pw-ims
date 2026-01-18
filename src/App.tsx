@@ -1,34 +1,88 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { useState, useEffect } from 'react'
 import './App.css'
 
+interface Item {
+  id: string
+  year: number | null
+  make: string | null
+  model: string | null
+  vin: string | null
+  miles: number | null
+  location_address: string | null
+  seller_account_number: string | null
+  data_capture_status: string | null
+  review_status: string | null
+  published: boolean | null
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [items, setItems] = useState<Item[]>([])
+  const [form, setForm] = useState({
+    year: '',
+    make: '',
+    model: '',
+    vin: '',
+    miles: '',
+    location_address: '',
+    seller_account_number: ''
+  })
+
+  const fetchItems = () => {
+    fetch('http://localhost:3001/items')
+      .then(res => res.json())
+      .then(data => setItems(data))
+  }
+
+  useEffect(() => {
+    fetchItems()
+  }, [])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await fetch('http://localhost:3001/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        year: Number(form.year),
+        make: form.make,
+        model: form.model,
+        vin: form.vin,
+        miles: Number(form.miles),
+        location_address: form.location_address,
+        seller_account_number: form.seller_account_number,
+        data_capture_status: 'todo',
+        review_status: 'todo'
+      })
+    })
+    setForm({ year: '', make: '', model: '', vin: '', miles: '', location_address: '', seller_account_number: '' })
+    fetchItems()
+  }
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    <div>
+      <h1>IMS - Inventory Management</h1>
+      
+      <h2>Add Item</h2>
+      <form onSubmit={handleSubmit}>
+        <input placeholder="Year" value={form.year} onChange={e => setForm({...form, year: e.target.value})} />
+        <input placeholder="Make" value={form.make} onChange={e => setForm({...form, make: e.target.value})} />
+        <input placeholder="Model" value={form.model} onChange={e => setForm({...form, model: e.target.value})} />
+        <input placeholder="VIN" value={form.vin} onChange={e => setForm({...form, vin: e.target.value})} />
+        <input placeholder="Miles" value={form.miles} onChange={e => setForm({...form, miles: e.target.value})} />
+        <input placeholder="Location" value={form.location_address} onChange={e => setForm({...form, location_address: e.target.value})} />
+        <input placeholder="Seller Account" value={form.seller_account_number} onChange={e => setForm({...form, seller_account_number: e.target.value})} />
+        <button type="submit">Add Item</button>
+      </form>
+
+      <h2>Items ({items.length})</h2>
+      <ul>
+        {items.map(item => (
+          <li key={item.id}>
+            {item.year} {item.make} {item.model} - {item.miles} miles
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
