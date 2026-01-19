@@ -3,6 +3,8 @@ import './App.css'
 
 interface Item {
   id: string
+  universal_id: string
+  origin_system: string
   year: number | null
   make: string | null
   model: string | null
@@ -38,31 +40,31 @@ function App() {
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault()
-  
-  if (!form.year || !form.make || !form.model) {
-    alert('Year, Make, and Model are required')
-    return
-  }
-  
-  await fetch('http://localhost:3001/items', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      year: Number(form.year),
-      make: form.make,
-      model: form.model,
-      vin: form.vin,
-      miles: Number(form.miles) || null,
-      location_address: form.location_address,
-      seller_account_number: form.seller_account_number,
-      data_capture_status: 'todo',
-      review_status: 'todo'
+    e.preventDefault()
+    
+    if (!form.year || !form.make || !form.model) {
+      alert('Year, Make, and Model are required')
+      return
+    }
+    
+    await fetch('http://localhost:3001/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        year: Number(form.year),
+        make: form.make,
+        model: form.model,
+        vin: form.vin,
+        miles: Number(form.miles) || null,
+        location_address: form.location_address,
+        seller_account_number: form.seller_account_number,
+        data_capture_status: 'todo',
+        review_status: 'todo'
+      })
     })
-  })
-  setForm({ year: '', make: '', model: '', vin: '', miles: '', location_address: '', seller_account_number: '' })
-  fetchItems()
-}
+    setForm({ year: '', make: '', model: '', vin: '', miles: '', location_address: '', seller_account_number: '' })
+    fetchItems()
+  }
 
   return (
     <div>
@@ -85,6 +87,7 @@ function App() {
         {items.map(item => (
           <li key={item.id}>
             {item.year} {item.make} {item.model} - {item.miles} miles
+            <small style={{marginLeft: '1rem', color: '#666'}}>Origin: {item.origin_system}</small>
           </li>
         ))}
       </ul>
