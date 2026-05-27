@@ -5,6 +5,7 @@ interface Item {
   id: string
   universal_id: string
   origin_system: string
+  icn: string | null
   year: number | null
   make: string | null
   model: string | null
@@ -20,6 +21,7 @@ interface Item {
 function App() {
   const [items, setItems] = useState<Item[]>([])
   const [form, setForm] = useState({
+    icn: '',
     year: '',
     make: '',
     model: '',
@@ -41,16 +43,15 @@ function App() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
     if (!form.year || !form.make || !form.model) {
       alert('Year, Make, and Model are required')
       return
     }
-    
     await fetch('http://localhost:3001/items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        icn: form.icn || null,
         year: Number(form.year),
         make: form.make,
         model: form.model,
@@ -62,16 +63,16 @@ function App() {
         review_status: 'todo'
       })
     })
-    setForm({ year: '', make: '', model: '', vin: '', miles: '', location_address: '', seller_account_number: '' })
+    setForm({ icn: '', year: '', make: '', model: '', vin: '', miles: '', location_address: '', seller_account_number: '' })
     fetchItems()
   }
 
   return (
     <div>
       <h1>IMS - Inventory Management</h1>
-      
       <h2>Add Item</h2>
       <form onSubmit={handleSubmit}>
+        <input placeholder="ICN (e.g. YA4569)" value={form.icn} onChange={e => setForm({...form, icn: e.target.value})} />
         <input placeholder="Year" value={form.year} onChange={e => setForm({...form, year: e.target.value})} />
         <input placeholder="Make" value={form.make} onChange={e => setForm({...form, make: e.target.value})} />
         <input placeholder="Model" value={form.model} onChange={e => setForm({...form, model: e.target.value})} />
@@ -81,12 +82,11 @@ function App() {
         <input placeholder="Seller Account" value={form.seller_account_number} onChange={e => setForm({...form, seller_account_number: e.target.value})} />
         <button type="submit">Add Item</button>
       </form>
-
       <h2>Items ({items.length})</h2>
       <ul>
         {items.map(item => (
           <li key={item.id}>
-            {item.year} {item.make} {item.model} - {item.miles} miles
+            <strong>{item.icn}</strong> - {item.year} {item.make} {item.model} - {item.miles} miles
             <small style={{marginLeft: '1rem', color: '#666'}}>Origin: {item.origin_system}</small>
           </li>
         ))}
