@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 interface Item {
   id: string
   universal_id: string
@@ -30,7 +32,7 @@ function App() {
   })
 
   const fetchItems = () => {
-    fetch('http://localhost:3001/items')
+    fetch(`${API_URL}/items`)
       .then(res => res.json())
       .then(data => setItems(data))
   }
