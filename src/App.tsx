@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import './App.css';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '/api';
+const PURPLE = '#5b2a86';
 
 interface Item {
   id: string;
@@ -11,12 +12,12 @@ interface Item {
   model: string | null;
   vin: string | null;
   miles: number | null;
+  raw_text: string | null;
+  extra_attributes: Record<string, unknown> | null;
   data_capture_status: string | null;
   review_status: string | null;
   published: boolean | null;
 }
-
-const PURPLE = '#5b2a86';
 
 function statusOf(item: Item): string {
   if (item.published) return 'published';
@@ -26,10 +27,7 @@ function statusOf(item: Item): string {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  published: '#d4edda',
-  reviewed: '#cce5ff',
-  captured: '#fff3cd',
-  'in progress': '#f0f0f0',
+  published: '#d4edda', reviewed: '#cce5ff', captured: '#fff3cd', 'in progress': '#f0f0f0',
 };
 
 function App() {
@@ -37,40 +35,35 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  // view: 'list' | 'detail'. selected = item being edited, or null for new.
+  const [view, setView] = useState<'list' | 'detail'>('list');
+  const [selected, setSelected] = useState<Item | null>(null);
 
   const loadItems = () => {
     setLoading(true);
     fetch(`${API_URL}/items`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-        return res.json();
-      })
-      .then((data) => setItems(data))
-      .catch((err) => setError(err.message))
+      .then((r) => { if (!r.ok) throw new Error(`Request failed: ${r.status}`); return r.json(); })
+      .then(setItems)
+      .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
-
   useEffect(loadItems, []);
 
-  const filtered = useMemo(() => {
-    return items.filter((item) => {
-      const matchesStatus = statusFilter === 'all' || statusOf(item) === statusFilter;
-      const q = search.toLowerCase();
-      const matchesSearch =
-        !q ||
-        [item.icn, item.make, item.model, item.vin, String(item.year)]
-          .filter(Boolean)
-          .some((f) => String(f).toLowerCase().includes(q));
-      return matchesStatus && matchesSearch;
-    });
-  }, [items, statusFilter, search]);
+  const filtered = useMemo(() => items.filter((item) => {
+    const matchesStatus = statusFilter === 'all' || statusOf(item) === statusFilter;
+    const q = search.toLowerCase();
+    const matchesSearch = !q || [item.icn, item.make, item.model, item.vin, String(item.year)]
+      .filter(Boolean).some((f) => String(f).toLowerCase().includes(q));
+    return matchesStatus && matchesSearch;
+  }), [items, statusFilter, search]);
 
-  const statuses = ['all', 'in progress', 'captured', 'reviewed', 'published'];
+  const openNew = () => { setSelected(null); setView('detail'); };
+  const openItem = (item: Item) => { setSelected(item); setView('detail'); };
+  const backToList = () => { setView('list'); setSelected(null); loadItems(); };
 
   return (
     <div style={{ minHeight: '100vh', fontFamily: 'system-ui, sans-serif', color: '#222', background: '#faf9fb' }}>
-      {/* Header with app tabs */}
       <header style={{ background: '#fff', borderBottom: '1px solid #e5e5e5', padding: '0.75rem 2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
           <div>
@@ -85,65 +78,176 @@ function App() {
       </header>
 
       <div style={{ padding: '1.5rem 2rem' }}>
-        <h2 style={{ marginTop: 0 }}>Items</h2>
+        {view === 'list' ? (
+          <ListView
+            items={items} filtered={filtered} loading={loading} error={error}
+            search={search} setSearch={setSearch}
+            statusFilter={statusFilter} setStatusFilter={setStatusFilter}
+            loadItems={loadItems} openNew={openNew} openItem={openItem}
+          />
+        ) : (
+          <DetailView item={selected} onBack={backToList} />
+        )}
+      </div>
+    </div>
+  );
+}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-          <button onClick={loadItems} style={btnSecondary}>&#8635; Refresh</button>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
-              {statuses.map((s) => (
-                <option key={s} value={s}>{s === 'all' ? 'All statuses' : s}</option>
-              ))}
-            </select>
-            <input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} style={inputStyle} />
+function ListView(props: {
+  items: Item[]; filtered: Item[]; loading: boolean; error: string | null;
+  search: string; setSearch: (s: string) => void;
+  statusFilter: string; setStatusFilter: (s: string) => void;
+  loadItems: () => void; openNew: () => void; openItem: (i: Item) => void;
+}) {
+  const statuses = ['all', 'in progress', 'captured', 'reviewed', 'published'];
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
+        <h2 style={{ margin: 0 }}>Items</h2>
+        <button onClick={props.openNew} style={{ ...btnPrimary, marginLeft: '1rem' }}>+ Create Item</button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <button onClick={props.loadItems} style={btnSecondary}>&#8635; Refresh</button>
+          <select value={props.statusFilter} onChange={(e) => props.setStatusFilter(e.target.value)} style={selectStyle}>
+            {statuses.map((s) => <option key={s} value={s}>{s === 'all' ? 'All statuses' : s}</option>)}
+          </select>
+          <input placeholder="Search..." value={props.search} onChange={(e) => props.setSearch(e.target.value)} style={inputStyle} />
+        </div>
+      </div>
+
+      <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, overflow: 'hidden' }}>
+        {props.loading && <p style={{ padding: '1rem' }}>Loading...</p>}
+        {props.error && <p style={{ padding: '1rem', color: 'red' }}>Error: {props.error}</p>}
+        {!props.loading && !props.error && (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <thead>
+              <tr style={{ background: '#fafafa', textAlign: 'left' }}>
+                <th style={th}>ICN</th><th style={th}>Make</th><th style={th}>Model</th>
+                <th style={th}>Year</th><th style={th}>VIN</th><th style={th}>Status</th><th style={th}>Published</th>
+              </tr>
+            </thead>
+            <tbody>
+              {props.filtered.length === 0 && <tr><td style={td} colSpan={7}>No items match.</td></tr>}
+              {props.filtered.map((item) => {
+                const status = statusOf(item);
+                return (
+                  <tr key={item.id} onClick={() => props.openItem(item)} style={{ borderTop: '1px solid #eee', cursor: 'pointer' }}>
+                    <td style={{ ...td, fontWeight: 600 }}>{item.icn}</td>
+                    <td style={td}>{item.make ?? '-'}</td>
+                    <td style={td}>{item.model ?? '-'}</td>
+                    <td style={td}>{item.year ?? '-'}</td>
+                    <td style={td}>{item.vin ?? '-'}</td>
+                    <td style={td}><span style={{ padding: '0.15rem 0.6rem', borderRadius: 12, fontSize: '0.8rem', background: STATUS_COLORS[status] ?? '#f0f0f0' }}>{status}</span></td>
+                    <td style={td}>{item.published ? 'Yes' : 'No'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#888' }}>{props.filtered.length} of {props.items.length} items</div>
+    </>
+  );
+}
+
+function DetailView({ item, onBack }: { item: Item | null; onBack: () => void }) {
+  const isNew = !item;
+  const [rawText, setRawText] = useState(item?.raw_text ?? '');
+  const [appraisalRequested, setAppraisalRequested] = useState(false);
+  const [current, setCurrent] = useState<Item | null>(item);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      if (isNew) {
+        const res = await fetch(`${API_URL}/items/from-text`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw_text: rawText, appraisal_requested: appraisalRequested }),
+        });
+        const data = await res.json();
+        setCurrent(data.item);
+        setMsg('Item created.');
+      } else {
+        const res = await fetch(`${API_URL}/items/${item!.id}/from-text`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw_text: rawText }),
+        });
+        const data = await res.json();
+        setCurrent(data.item ?? data);
+        setMsg('Item updated.');
+      }
+    } catch (e) {
+      setMsg('Save failed: ' + (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const fields = current;
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+        <button onClick={onBack} style={btnSecondary}>&#8592; Back</button>
+        <h2 style={{ margin: 0 }}>{isNew ? 'New Item' : `Item ${item!.icn}`}</h2>
+      </div>
+
+      <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
+        {/* Left: text input */}
+        <div style={{ flex: 1, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, padding: '1rem' }}>
+          <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Item text (description)</label>
+          <textarea
+            value={rawText} onChange={(e) => setRawText(e.target.value)}
+            rows={10} placeholder="Paste or type the item description. Claude will extract the fields."
+            style={{ width: '100%', marginTop: '0.5rem', padding: '0.75rem', borderRadius: 8, border: '1px solid #ddd', fontFamily: 'inherit', fontSize: '0.9rem', boxSizing: 'border-box' }}
+          />
+          {isNew && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', fontSize: '0.9rem' }}>
+              <input type="checkbox" checked={appraisalRequested} onChange={(e) => setAppraisalRequested(e.target.checked)} />
+              Request appraisal from PWAS
+            </label>
+          )}
+          <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <button onClick={save} disabled={busy || !rawText.trim()} style={btnPrimary}>
+              {busy ? 'Saving...' : isNew ? 'Extract & Create' : 'Re-extract & Update'}
+            </button>
+            {msg && <span style={{ fontSize: '0.85rem', color: '#666' }}>{msg}</span>}
           </div>
         </div>
 
-        <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, overflow: 'hidden' }}>
-          {loading && <p style={{ padding: '1rem' }}>Loading...</p>}
-          {error && <p style={{ padding: '1rem', color: 'red' }}>Error: {error}</p>}
-          {!loading && !error && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-              <thead>
-                <tr style={{ background: '#fafafa', textAlign: 'left' }}>
-                  <th style={th}>ICN</th>
-                  <th style={th}>Make</th>
-                  <th style={th}>Model</th>
-                  <th style={th}>Year</th>
-                  <th style={th}>VIN</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Published</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 && (
-                  <tr><td style={td} colSpan={7}>No items match.</td></tr>
-                )}
-                {filtered.map((item) => {
-                  const status = statusOf(item);
-                  return (
-                    <tr key={item.id} style={{ borderTop: '1px solid #eee' }}>
-                      <td style={{ ...td, fontWeight: 600 }}>{item.icn}</td>
-                      <td style={td}>{item.make ?? '-'}</td>
-                      <td style={td}>{item.model ?? '-'}</td>
-                      <td style={td}>{item.year ?? '-'}</td>
-                      <td style={td}>{item.vin ?? '-'}</td>
-                      <td style={td}>
-                        <span style={{ padding: '0.15rem 0.6rem', borderRadius: 12, fontSize: '0.8rem', background: STATUS_COLORS[status] ?? '#f0f0f0' }}>{status}</span>
-                      </td>
-                      <td style={td}>{item.published ? 'Yes' : 'No'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        {/* Right: extracted fields */}
+        <div style={{ flex: 1, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, padding: '1rem' }}>
+          <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.75rem' }}>Extracted fields</div>
+          {!fields && <p style={{ color: '#999', fontSize: '0.9rem' }}>Save to see extracted fields.</p>}
+          {fields && (
+            <>
+              <FieldRow label="ICN" value={fields.icn} />
+              <FieldRow label="Year" value={fields.year} />
+              <FieldRow label="Make" value={fields.make} />
+              <FieldRow label="Model" value={fields.model} />
+              <FieldRow label="VIN" value={fields.vin} />
+              <FieldRow label="Miles" value={fields.miles} />
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', margin: '0.75rem 0 0.25rem', color: '#666' }}>Extra attributes</div>
+              {fields.extra_attributes && Object.keys(fields.extra_attributes).length > 0 ? (
+                Object.entries(fields.extra_attributes).map(([k, v]) => (
+                  <FieldRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
+                ))
+              ) : <p style={{ color: '#999', fontSize: '0.85rem' }}>None.</p>}
+            </>
           )}
         </div>
-
-        <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#888' }}>
-          {filtered.length} of {items.length} items
-        </div>
       </div>
+    </>
+  );
+}
+
+function FieldRow({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div style={{ display: 'flex', padding: '0.3rem 0', fontSize: '0.9rem', borderBottom: '1px solid #f3f3f3' }}>
+      <span style={{ width: 140, color: '#666' }}>{label}</span>
+      <span>{value === null || value === undefined || value === '' ? '-' : String(value)}</span>
     </div>
   );
 }
@@ -151,6 +255,7 @@ function App() {
 const tab: React.CSSProperties = { padding: '0.5rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none' };
 const th: React.CSSProperties = { padding: '0.75rem 1rem', fontWeight: 600, color: '#555' };
 const td: React.CSSProperties = { padding: '0.75rem 1rem' };
+const btnPrimary: React.CSSProperties = { padding: '0.5rem 1rem', borderRadius: 8, border: 'none', background: PURPLE, color: '#fff', cursor: 'pointer', fontWeight: 600 };
 const btnSecondary: React.CSSProperties = { padding: '0.5rem 1rem', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer', fontWeight: 600 };
 const inputStyle: React.CSSProperties = { padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid #ddd', fontSize: '0.9rem' };
 const selectStyle: React.CSSProperties = { padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid #ddd', fontSize: '0.9rem', background: '#fff' };
