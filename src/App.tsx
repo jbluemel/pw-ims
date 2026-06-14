@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import './App.css';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '/api';
+const PWAS_API = '/pwas-api';
 const PURPLE = '#5b2a86';
 
 interface Item {
@@ -150,6 +151,34 @@ function ListView(props: {
   );
 }
 
+interface EvalRecord {
+  id: string; low_price: string; high_price: string; reasoning: string;
+  created_at: string; item_snapshot?: Record<string, unknown>;
+}
+
+function EvalRow({ ev }: { ev: EvalRecord }) {
+  const [open, setOpen] = useState(false);
+  const snap = ev.item_snapshot ?? {};
+  return (
+    <div style={{ borderTop: '1px solid #eee', padding: '0.6rem 0' }}>
+      <div onClick={() => setOpen(!open)} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '0.75rem' }}>
+        <span style={{ color: '#888', fontSize: '0.85rem', width: 170 }}>{new Date(ev.created_at).toLocaleString()}</span>
+        <strong>${ev.low_price} - ${ev.high_price}</strong>
+        <span style={{ marginLeft: 'auto', color: PURPLE, fontSize: '0.85rem' }}>{open ? 'Hide' : 'Details'}</span>
+      </div>
+      {open && (
+        <div style={{ marginTop: '0.5rem', paddingLeft: '0.5rem' }}>
+          <div style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}>{ev.reasoning}</div>
+          <div style={{ fontSize: '0.8rem', color: '#666', fontWeight: 600, marginBottom: '0.25rem' }}>Data at evaluation time</div>
+          <div style={{ fontSize: '0.8rem', fontFamily: 'monospace', background: '#fafafa', padding: '0.5rem', borderRadius: 6, whiteSpace: 'pre-wrap' }}>
+            {JSON.stringify(snap, null, 2)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DetailView({ item, onBack }: { item: Item | null; onBack: () => void }) {
   const isNew = !item;
   const [rawText, setRawText] = useState(item?.raw_text ?? '');
@@ -157,6 +186,20 @@ function DetailView({ item, onBack }: { item: Item | null; onBack: () => void })
   const [current, setCurrent] = useState<Item | null>(item);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [evals, setEvals] = useState<EvalRecord[]>([]);
+
+  // For an existing item, look up its appraisal in PWAS and load eval history.
+  const loadAppraisal = async (itemId: string) => {
+    try {
+      const aRes = await fetch(`${PWAS_API}/appraisals?item_id=${itemId}`);
+      const list = await aRes.json();
+      if (!Array.isArray(list) || list.length === 0) { setEvals([]); return; }
+      const appraisalId = list[0].id;
+      const eRes = await fetch(`${PWAS_API}/appraisals/${appraisalId}/evaluations`);
+      setEvals(await eRes.json());
+    } catch { setEvals([]); }
+  };
+  useEffect(() => { if (item) loadAppraisal(item.id); }, []);
 
   const save = async () => {
     setBusy(true); setMsg(null);
@@ -239,6 +282,14 @@ function DetailView({ item, onBack }: { item: Item | null; onBack: () => void })
           )}
         </div>
       </div>
+
+      {!isNew && (
+        <div style={{ marginTop: "1.5rem", background: "#fff", border: "1px solid #e5e5e5", borderRadius: 10, padding: "1rem" }}>
+          <div style={{ fontWeight: 600, fontSize: "0.95rem", marginBottom: "0.75rem" }}>Appraisal History (from PWAS)</div>
+          {evals.length === 0 && <span style={{ color: "#999", fontSize: "0.85rem" }}>No appraisal evaluations for this item.</span>}
+          {evals.map((ev) => <EvalRow key={ev.id} ev={ev} />)}
+        </div>
+      )}
     </>
   );
 }
