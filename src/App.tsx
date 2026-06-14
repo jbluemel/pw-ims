@@ -1,323 +1,158 @@
-import { useState, useEffect } from 'react'
-import './App.css'
+import { useEffect, useMemo, useState } from 'react';
+import './App.css';
 
-const API_URL = '/api';
+const API_URL = import.meta.env.VITE_API_URL ?? '/api';
 
 interface Item {
-  id: string
-  universal_id: string
-  origin_system: string
-  year: number | null
-  make: string | null
-  model: string | null
-  vin: string | null
-  miles: number | null
-  location_address: string | null
-  seller_account_number: string | null
-  data_capture_status: string | null
-  review_status: string | null
-  published: boolean | null
-  raw_text?: string | null
-  extra_attributes?: Record<string, any> | null
-  estimate?: {
-    low_price: string
-    high_price: string
-    reasoning: string
-  } | null
+  id: string;
+  icn: string;
+  year: number | null;
+  make: string | null;
+  model: string | null;
+  vin: string | null;
+  miles: number | null;
+  data_capture_status: string | null;
+  review_status: string | null;
+  published: boolean | null;
 }
 
-interface Estimate {
-  id: string
-  item_id: string
-  low_price: string
-  high_price: string
-  reasoning: string
-  model_used: string
-  prompt_version: string
-  item_snapshot: any
-  created_at: string
+const PURPLE = '#5b2a86';
+
+function statusOf(item: Item): string {
+  if (item.published) return 'published';
+  if (item.review_status === 'done') return 'reviewed';
+  if (item.data_capture_status === 'done') return 'captured';
+  return 'in progress';
 }
+
+const STATUS_COLORS: Record<string, string> = {
+  published: '#d4edda',
+  reviewed: '#cce5ff',
+  captured: '#fff3cd',
+  'in progress': '#f0f0f0',
+};
 
 function App() {
-  const [items, setItems] = useState<Item[]>([])
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  const [rawText, setRawText] = useState('')
-  const [adding, setAdding] = useState(false)
-
-  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
-  const [expandedEstimateId, setExpandedEstimateId] = useState<string | null>(null)
-  const [estimatesByItem, setEstimatesByItem] = useState<Record<string, Estimate[]>>({})
-
-  const [editText, setEditText] = useState<Record<string, string>>({})
-  const [savingItemId, setSavingItemId] = useState<string | null>(null)
-  const [estimatingItemId, setEstimatingItemId] = useState<string | null>(null)
-
-  const fetchItems = async () => {
-    const res = await fetch(`${API_URL}/items`)
-    const itemsList: Item[] = await res.json()
-
-    const withEstimates = await Promise.all(
-      itemsList.map(async item => {
-        try {
-          const estRes = await fetch(`${API_URL}/items/${item.id}/estimates/latest`)
-          if (!estRes.ok) return item
-          const estimate = await estRes.json()
-          return { ...item, estimate }
-        } catch {
-          return item
-        }
+  const loadItems = () => {
+    setLoading(true);
+    fetch(`${API_URL}/items`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+        return res.json();
       })
-    )
+      .then((data) => setItems(data))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
 
-    setItems(withEstimates)
-  }
+  useEffect(loadItems, []);
 
-  const fetchEstimateHistory = async (itemId: string) => {
-    try {
-      const res = await fetch(`${API_URL}/items/${itemId}/estimates`)
-      if (!res.ok) return
-      const history: Estimate[] = await res.json()
-      setEstimatesByItem(prev => ({ ...prev, [itemId]: history }))
-    } catch (err) {
-      console.error('Fetch estimate history error', err)
-    }
-  }
+  const filtered = useMemo(() => {
+    return items.filter((item) => {
+      const matchesStatus = statusFilter === 'all' || statusOf(item) === statusFilter;
+      const q = search.toLowerCase();
+      const matchesSearch =
+        !q ||
+        [item.icn, item.make, item.model, item.vin, String(item.year)]
+          .filter(Boolean)
+          .some((f) => String(f).toLowerCase().includes(q));
+      return matchesStatus && matchesSearch;
+    });
+  }, [items, statusFilter, search]);
 
-  const toggleItem = (itemId: string) => {
-    if (expandedItemId === itemId) {
-      setExpandedItemId(null)
-      setExpandedEstimateId(null)
-      return
-    }
-    setExpandedItemId(itemId)
-    setExpandedEstimateId(null)
-    if (!estimatesByItem[itemId]) {
-      fetchEstimateHistory(itemId)
-    }
-  }
-
-  const toggleEstimate = (estimateId: string) => {
-    setExpandedEstimateId(prev => (prev === estimateId ? null : estimateId))
-  }
-
-  const reEstimate = async (itemId: string) => {
-    setEstimatingItemId(itemId)
-    try {
-      const res = await fetch(`${API_URL}/items/${itemId}/estimates`, {
-        method: 'POST',
-      })
-      if (!res.ok) {
-        console.error('Re-estimate failed')
-        return
-      }
-      const newEstimate = await res.json()
-      setItems(prev =>
-        prev.map(item =>
-          item.id === itemId ? { ...item, estimate: newEstimate } : item
-        )
-      )
-      fetchEstimateHistory(itemId)
-    } catch (err) {
-      console.error('Re-estimate error', err)
-    } finally {
-      setEstimatingItemId(null)
-    }
-  }
-
-  const handleAddItem = async () => {
-    if (!rawText.trim()) {
-      alert('Enter some text first')
-      return
-    }
-    setAdding(true)
-    try {
-      const res = await fetch(`${API_URL}/items/from-text`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_text: rawText })
-      })
-      if (!res.ok) {
-        alert('Add item failed')
-        return
-      }
-      setRawText('')
-      await fetchItems()
-    } catch (err) {
-      console.error('Add item error', err)
-    } finally {
-      setAdding(false)
-    }
-  }
-
-  const handleUpdateItem = async (itemId: string) => {
-    const text = editText[itemId]
-    if (text === undefined || !text.trim()) {
-      alert('Text is empty')
-      return
-    }
-    setSavingItemId(itemId)
-    try {
-      const res = await fetch(`${API_URL}/items/${itemId}/from-text`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw_text: text })
-      })
-      if (!res.ok) {
-        alert('Update failed')
-        return
-      }
-      await fetchItems()
-    } catch (err) {
-      console.error('Update item error', err)
-    } finally {
-      setSavingItemId(null)
-    }
-  }
-
-  useEffect(() => {
-    fetchItems()
-  }, [])
+  const statuses = ['all', 'in progress', 'captured', 'reviewed', 'published'];
 
   return (
-    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 1rem', boxSizing: 'border-box' }}>
-      <h1 style={{ textAlign: 'center' }}>Add Item</h1>
+    <div style={{ minHeight: '100vh', fontFamily: 'system-ui, sans-serif', color: '#222', background: '#faf9fb' }}>
+      {/* Header with app tabs */}
+      <header style={{ background: '#fff', borderBottom: '1px solid #e5e5e5', padding: '0.75rem 2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+          <div>
+            <span style={{ fontWeight: 800, fontSize: '1.1rem', color: PURPLE }}>purple wave</span>
+            <span style={{ fontSize: '0.7rem', letterSpacing: 2, color: '#999', marginLeft: 6 }}>AUCTION</span>
+          </div>
+          <nav style={{ display: 'flex', gap: '0.5rem' }}>
+            <a href="/" style={{ ...tab, background: PURPLE, color: '#fff' }}>IMS</a>
+            <a href="/pwas/" style={{ ...tab, color: '#333' }}>PWAS</a>
+          </nav>
+        </div>
+      </header>
 
-      <textarea
-        placeholder="Paste item description, e.g. 2021 Caterpillar 963 track loader, 5,538 hours, runs great"
-        value={rawText}
-        onChange={e => setRawText(e.target.value)}
-        rows={8}
-        style={{ width: '100%', display: 'block', boxSizing: 'border-box' }}
-      />
-      <button onClick={handleAddItem} disabled={adding} style={{ marginTop: '0.5rem' }}>
-        {adding ? 'Adding…' : 'Add Item'}
-      </button>
+      <div style={{ padding: '1.5rem 2rem' }}>
+        <h2 style={{ marginTop: 0 }}>Items</h2>
 
-      <h2>Items ({items.length})</h2>
-      <ul style={{ listStyle: 'none', padding: 0, width: '100%' }}>
-        {items.map(item => {
-          const isOpen = expandedItemId === item.id
-          const history = estimatesByItem[item.id]
-          const currentText = editText[item.id] !== undefined ? editText[item.id] : (item.raw_text ?? '')
-          const dirty = currentText !== (item.raw_text ?? '')
-          return (
-            <li key={item.id} style={{ marginBottom: '0.5rem', border: '1px solid #ddd', borderRadius: '6px' }}>
-              <div
-                onClick={() => toggleItem(item.id)}
-                style={{ cursor: 'pointer', padding: '0.6rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}
-              >
-                <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0.5rem' }}>
-                  <span>
-                    {item.year} {item.make} {item.model}
-                    {item.miles != null && ` - ${item.miles} miles`}
-                  </span>
-                  <small style={{ color: '#888' }}>Origin: {item.origin_system}</small>
-                  {item.estimate && (
-                    <small style={{ color: '#2a7' }}>
-                      Est: ${item.estimate.low_price} – ${item.estimate.high_price}
-                    </small>
-                  )}
-                </span>
-                <span style={{ color: '#999' }}>{isOpen ? '▲' : '▼'}</span>
-              </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+          <button onClick={loadItems} style={btnSecondary}>&#8635; Refresh</button>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
+              {statuses.map((s) => (
+                <option key={s} value={s}>{s === 'all' ? 'All statuses' : s}</option>
+              ))}
+            </select>
+            <input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
 
-              {isOpen && (
-                <div style={{ padding: '0 0.75rem 0.75rem', borderTop: '1px solid #eee' }}>
-                  <div style={{ marginTop: '0.5rem' }}>
-                    <div style={{ color: '#888', fontSize: '0.85rem', marginBottom: '0.25rem' }}>Original text (editable)</div>
-                    <textarea
-                      value={currentText}
-                      onChange={e => setEditText(prev => ({ ...prev, [item.id]: e.target.value }))}
-                      rows={8}
-                      style={{ width: '100%', fontSize: '0.85rem', resize: 'vertical', boxSizing: 'border-box' }}
-                    />
-                    <div style={{ marginTop: '0.4rem' }}>
-                      <button
-                        onClick={() => handleUpdateItem(item.id)}
-                        disabled={!dirty || savingItemId === item.id}
-                        style={{ fontSize: '0.85rem' }}
-                      >
-                        {savingItemId === item.id ? 'Updating…' : 'Update'}
-                      </button>
-                      {dirty && savingItemId !== item.id && (
-                        <span style={{ marginLeft: '0.5rem', fontSize: '0.8rem', color: '#999' }}>unsaved changes</span>
-                      )}
-                    </div>
-                  </div>
+        <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, overflow: 'hidden' }}>
+          {loading && <p style={{ padding: '1rem' }}>Loading...</p>}
+          {error && <p style={{ padding: '1rem', color: 'red' }}>Error: {error}</p>}
+          {!loading && !error && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <thead>
+                <tr style={{ background: '#fafafa', textAlign: 'left' }}>
+                  <th style={th}>ICN</th>
+                  <th style={th}>Make</th>
+                  <th style={th}>Model</th>
+                  <th style={th}>Year</th>
+                  <th style={th}>VIN</th>
+                  <th style={th}>Status</th>
+                  <th style={th}>Published</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr><td style={td} colSpan={7}>No items match.</td></tr>
+                )}
+                {filtered.map((item) => {
+                  const status = statusOf(item);
+                  return (
+                    <tr key={item.id} style={{ borderTop: '1px solid #eee' }}>
+                      <td style={{ ...td, fontWeight: 600 }}>{item.icn}</td>
+                      <td style={td}>{item.make ?? '-'}</td>
+                      <td style={td}>{item.model ?? '-'}</td>
+                      <td style={td}>{item.year ?? '-'}</td>
+                      <td style={td}>{item.vin ?? '-'}</td>
+                      <td style={td}>
+                        <span style={{ padding: '0.15rem 0.6rem', borderRadius: 12, fontSize: '0.8rem', background: STATUS_COLORS[status] ?? '#f0f0f0' }}>{status}</span>
+                      </td>
+                      <td style={td}>{item.published ? 'Yes' : 'No'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
 
-                  <div style={{ color: '#888', fontSize: '0.85rem', marginTop: '0.75rem', marginBottom: '0.25rem' }}>Mapped fields</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.25rem 1rem', fontSize: '0.85rem' }}>
-                    <div><span style={{ color: '#888' }}>Year:</span> {item.year ?? '—'}</div>
-                    <div><span style={{ color: '#888' }}>Make:</span> {item.make ?? '—'}</div>
-                    <div><span style={{ color: '#888' }}>Model:</span> {item.model ?? '—'}</div>
-                    <div><span style={{ color: '#888' }}>VIN:</span> {item.vin ?? '—'}</div>
-                    <div><span style={{ color: '#888' }}>Miles:</span> {item.miles ?? '—'}</div>
-                    <div><span style={{ color: '#888' }}>Status:</span> {item.review_status ?? '—'}</div>
-                  </div>
-
-                  {item.extra_attributes && Object.keys(item.extra_attributes).length > 0 && (
-                    <div style={{ marginTop: '0.75rem' }}>
-                      <div style={{ color: '#888', fontSize: '0.85rem' }}>Additional details</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.25rem' }}>
-                        {Object.entries(item.extra_attributes).map(([k, v]) => (
-                          <span key={k} style={{ background: '#f0f0f0', padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem' }}>
-                            {k}: {String(v)}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#888', fontSize: '0.85rem' }}>Estimate history</span>
-                      <button
-                        onClick={() => reEstimate(item.id)}
-                        disabled={estimatingItemId === item.id}
-                        style={{ fontSize: '0.8rem' }}
-                      >
-                        {estimatingItemId === item.id ? 'Estimating…' : 'Re-estimate'}
-                      </button>
-                    </div>
-
-                    {history === undefined && <div style={{ fontSize: '0.85rem', color: '#999' }}>Loading…</div>}
-                    {history && history.length === 0 && <div style={{ fontSize: '0.85rem', color: '#999' }}>No estimates yet.</div>}
-
-                    {history && history.map(est => {
-                      const estOpen = expandedEstimateId === est.id
-                      return (
-                        <div key={est.id} style={{ borderTop: '1px solid #eee', paddingTop: '0.4rem', marginTop: '0.4rem' }}>
-                          <div
-                            onClick={() => toggleEstimate(est.id)}
-                            style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', gap: '0.5rem' }}
-                          >
-                            <span>${est.low_price} – ${est.high_price}</span>
-                            <span style={{ color: '#999' }}>
-                              {new Date(est.created_at).toLocaleDateString()} · {est.prompt_version} {estOpen ? '▲' : '▼'}
-                            </span>
-                          </div>
-
-                          {estOpen && (
-                            <div style={{ marginTop: '0.4rem', fontSize: '0.8rem' }}>
-                              <div style={{ fontStyle: 'italic', color: '#666', marginBottom: '0.4rem' }}>{est.reasoning}</div>
-                              <div style={{ color: '#888' }}>Data used for this estimate:</div>
-                              <pre style={{ background: '#f4f4f4', padding: '0.5rem', fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                {JSON.stringify(est.item_snapshot, null, 2)}
-                              </pre>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-            </li>
-          )
-        })}
-      </ul>
+        <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#888' }}>
+          {filtered.length} of {items.length} items
+        </div>
+      </div>
     </div>
-  )
+  );
 }
 
-export default App
+const tab: React.CSSProperties = { padding: '0.5rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none' };
+const th: React.CSSProperties = { padding: '0.75rem 1rem', fontWeight: 600, color: '#555' };
+const td: React.CSSProperties = { padding: '0.75rem 1rem' };
+const btnSecondary: React.CSSProperties = { padding: '0.5rem 1rem', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer', fontWeight: 600 };
+const inputStyle: React.CSSProperties = { padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid #ddd', fontSize: '0.9rem' };
+const selectStyle: React.CSSProperties = { padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid #ddd', fontSize: '0.9rem', background: '#fff' };
+
+export default App;
