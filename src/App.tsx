@@ -185,17 +185,16 @@ function DetailView({ item, onBack }: { item: Item | null; onBack: () => void })
   const [appraisalRequested, setAppraisalRequested] = useState(false);
   const [current, setCurrent] = useState<Item | null>(item);
   const [busy, setBusy] = useState(false);
+  const [reqBusy, setReqBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [evals, setEvals] = useState<EvalRecord[]>([]);
 
-  // For an existing item, look up its appraisal in PWAS and load eval history.
   const loadAppraisal = async (itemId: string) => {
     try {
       const aRes = await fetch(`${PWAS_API}/appraisals?item_id=${itemId}`);
       const list = await aRes.json();
       if (!Array.isArray(list) || list.length === 0) { setEvals([]); return; }
-      const appraisalId = list[0].id;
-      const eRes = await fetch(`${PWAS_API}/appraisals/${appraisalId}/evaluations`);
+      const eRes = await fetch(`${PWAS_API}/appraisals/${list[0].id}/evaluations`);
       setEvals(await eRes.json());
     } catch { setEvals([]); }
   };
@@ -228,7 +227,22 @@ function DetailView({ item, onBack }: { item: Item | null; onBack: () => void })
     }
   };
 
+  // Request an appraisal on an existing item WITHOUT re-extracting.
+  const requestAppraisal = async () => {
+    if (!item) return;
+    setReqBusy(true); setMsg(null);
+    try {
+      await fetch(`${API_URL}/items/${item.id}/request-appraisal`, { method: 'POST' });
+      setMsg('Appraisal requested. It will appear once PWAS evaluates it.');
+    } catch (e) {
+      setMsg('Request failed: ' + (e as Error).message);
+    } finally {
+      setReqBusy(false);
+    }
+  };
+
   const fields = current;
+  const hasAppraisal = evals.length > 0;
 
   return (
     <>
@@ -238,58 +252,65 @@ function DetailView({ item, onBack }: { item: Item | null; onBack: () => void })
       </div>
 
       <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
-        {/* Left: text input */}
-        <div style={{ flex: 1, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, padding: '1rem' }}>
-          <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Item text (description)</label>
-          <textarea
-            value={rawText} onChange={(e) => setRawText(e.target.value)}
-            rows={10} placeholder="Paste or type the item description. Claude will extract the fields."
-            style={{ width: '100%', marginTop: '0.5rem', padding: '0.75rem', borderRadius: 8, border: '1px solid #ddd', fontFamily: 'inherit', fontSize: '0.9rem', boxSizing: 'border-box' }}
-          />
-          {isNew && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', fontSize: '0.9rem' }}>
-              <input type="checkbox" checked={appraisalRequested} onChange={(e) => setAppraisalRequested(e.target.checked)} />
-              Request appraisal from PWAS
-            </label>
-          )}
-          <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-            <button onClick={save} disabled={busy || !rawText.trim()} style={btnPrimary}>
-              {busy ? 'Saving...' : isNew ? 'Extract & Create' : 'Re-extract & Update'}
-            </button>
-            {msg && <span style={{ fontSize: '0.85rem', color: '#666' }}>{msg}</span>}
+        {/* LEFT: the item — text, actions, then all fields stacked below */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, padding: '1rem' }}>
+            <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Item text (description)</label>
+            <textarea
+              value={rawText} onChange={(e) => setRawText(e.target.value)}
+              rows={10} placeholder="Paste or type the item description. Claude will extract the fields."
+              style={{ width: '100%', marginTop: '0.5rem', padding: '0.75rem', borderRadius: 8, border: '1px solid #ddd', fontFamily: 'inherit', fontSize: '0.9rem', boxSizing: 'border-box' }}
+            />
+            {isNew && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={appraisalRequested} onChange={(e) => setAppraisalRequested(e.target.checked)} />
+                Request appraisal from PWAS
+              </label>
+            )}
+            <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button onClick={save} disabled={busy || !rawText.trim()} style={btnPrimary}>
+                {busy ? 'Saving...' : isNew ? 'Create' : 'Update'}
+              </button>
+              {!isNew && !hasAppraisal && (
+                <button onClick={requestAppraisal} disabled={reqBusy} style={btnSecondary}>
+                  {reqBusy ? 'Requesting...' : 'Request Appraisal'}
+                </button>
+              )}
+              {msg && <span style={{ fontSize: '0.85rem', color: '#666' }}>{msg}</span>}
+            </div>
+          </div>
+
+          {/* Fields stacked directly below the text box */}
+          <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, padding: '1rem', marginTop: '1rem' }}>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.75rem' }}>Extracted fields</div>
+            {!fields && <p style={{ color: '#999', fontSize: '0.9rem' }}>Save to see extracted fields.</p>}
+            {fields && (
+              <>
+                <FieldRow label="ICN" value={fields.icn} />
+                <FieldRow label="Year" value={fields.year} />
+                <FieldRow label="Make" value={fields.make} />
+                <FieldRow label="Model" value={fields.model} />
+                <FieldRow label="VIN" value={fields.vin} />
+                <FieldRow label="Miles" value={fields.miles} />
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', margin: '0.75rem 0 0.25rem', color: '#666' }}>Extra attributes</div>
+                {fields.extra_attributes && Object.keys(fields.extra_attributes).length > 0 ? (
+                  Object.entries(fields.extra_attributes).map(([k, v]) => (
+                    <FieldRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
+                  ))
+                ) : <p style={{ color: '#999', fontSize: '0.85rem' }}>None.</p>}
+              </>
+            )}
           </div>
         </div>
 
-        {/* Right: extracted fields */}
-        <div style={{ flex: 1, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, padding: '1rem' }}>
-          <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.75rem' }}>Extracted fields</div>
-          {!fields && <p style={{ color: '#999', fontSize: '0.9rem' }}>Save to see extracted fields.</p>}
-          {fields && (
-            <>
-              <FieldRow label="ICN" value={fields.icn} />
-              <FieldRow label="Year" value={fields.year} />
-              <FieldRow label="Make" value={fields.make} />
-              <FieldRow label="Model" value={fields.model} />
-              <FieldRow label="VIN" value={fields.vin} />
-              <FieldRow label="Miles" value={fields.miles} />
-              <div style={{ fontWeight: 600, fontSize: '0.85rem', margin: '0.75rem 0 0.25rem', color: '#666' }}>Extra attributes</div>
-              {fields.extra_attributes && Object.keys(fields.extra_attributes).length > 0 ? (
-                Object.entries(fields.extra_attributes).map(([k, v]) => (
-                  <FieldRow key={k} label={k} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />
-                ))
-              ) : <p style={{ color: '#999', fontSize: '0.85rem' }}>None.</p>}
-            </>
-          )}
-        </div>
-      </div>
-
-      {!isNew && (
-        <div style={{ marginTop: "1.5rem", background: "#fff", border: "1px solid #e5e5e5", borderRadius: 10, padding: "1rem" }}>
-          <div style={{ fontWeight: 600, fontSize: "0.95rem", marginBottom: "0.75rem" }}>Appraisal History (from PWAS)</div>
-          {evals.length === 0 && <span style={{ color: "#999", fontSize: "0.85rem" }}>No appraisal evaluations for this item.</span>}
+        {/* RIGHT: appraisal, pinned top-right so it never gets buried */}
+        <div style={{ flex: 1, minWidth: 0, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 10, padding: '1rem' }}>
+          <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.75rem' }}>Appraisal History (from PWAS)</div>
+          {isNew && <span style={{ color: '#999', fontSize: '0.85rem' }}>Save the item first.</span>}
+          {!isNew && evals.length === 0 && <span style={{ color: '#999', fontSize: '0.85rem' }}>No appraisal yet. Use “Request Appraisal” to send one to PWAS.</span>}
           {evals.map((ev) => <EvalRow key={ev.id} ev={ev} />)}
         </div>
-      )}
+      </div>
     </>
   );
 }
