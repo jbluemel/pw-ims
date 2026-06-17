@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import './App.css';
 
+
 const API_URL = import.meta.env.VITE_API_URL ?? '/api';
 const PWAS_API = '/pwas-api';
 const PURPLE = '#5b2a86';

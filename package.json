@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
+    "pw-shared-contracts": "file:../pw-shared-contracts",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
