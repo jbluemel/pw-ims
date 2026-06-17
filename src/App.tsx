@@ -15,20 +15,23 @@ interface Item {
   miles: number | null;
   raw_text: string | null;
   extra_attributes: Record<string, unknown> | null;
+  item_status?: string;
+  eval_status?: string;
   data_capture_status: string | null;
   review_status: string | null;
   published: boolean | null;
 }
 
-function statusOf(item: Item): string {
-  if (item.published) return 'published';
-  if (item.review_status === 'done') return 'reviewed';
-  if (item.data_capture_status === 'done') return 'captured';
-  return 'in progress';
+function itemStatusOf(item: Item): string {
+  return item.item_status ?? 'Created';
+}
+function evalStatusOf(item: Item): string {
+  return item.eval_status ?? 'Not Requested';
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  published: '#d4edda', reviewed: '#cce5ff', captured: '#fff3cd', 'in progress': '#f0f0f0',
+  'Published': '#d4edda', 'Created': '#f0f0f0',
+  'Complete': '#cce5ff', 'Requested': '#fff3cd', 'Not Requested': '#f0f0f0',
 };
 
 function App() {
@@ -52,7 +55,7 @@ function App() {
   useEffect(loadItems, []);
 
   const filtered = useMemo(() => items.filter((item) => {
-    const matchesStatus = statusFilter === 'all' || statusOf(item) === statusFilter;
+    const matchesStatus = statusFilter === 'all' || itemStatusOf(item) === statusFilter;
     const q = search.toLowerCase();
     const matchesSearch = !q || [item.icn, item.make, item.model, item.vin, String(item.year)]
       .filter(Boolean).some((f) => String(f).toLowerCase().includes(q));
@@ -100,7 +103,7 @@ function ListView(props: {
   statusFilter: string; setStatusFilter: (s: string) => void;
   loadItems: () => void; openNew: () => void; openItem: (i: Item) => void;
 }) {
-  const statuses = ['all', 'in progress', 'captured', 'reviewed', 'published'];
+  const statuses = ['all', 'Created', 'Published'];
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
@@ -123,13 +126,14 @@ function ListView(props: {
             <thead>
               <tr style={{ background: '#fafafa', textAlign: 'left' }}>
                 <th style={th}>ICN</th><th style={th}>Make</th><th style={th}>Model</th>
-                <th style={th}>Year</th><th style={th}>VIN</th><th style={th}>Status</th><th style={th}>Published</th>
+                <th style={th}>Year</th><th style={th}>VIN</th><th style={th}>Item Status</th><th style={th}>Eval Status</th>
               </tr>
             </thead>
             <tbody>
               {props.filtered.length === 0 && <tr><td style={td} colSpan={7}>No items match.</td></tr>}
               {props.filtered.map((item) => {
-                const status = statusOf(item);
+                const itemStatus = itemStatusOf(item);
+                const evalStatus = evalStatusOf(item);
                 return (
                   <tr key={item.id} onClick={() => props.openItem(item)} style={{ borderTop: '1px solid #eee', cursor: 'pointer' }}>
                     <td style={{ ...td, fontWeight: 600 }}>{item.icn}</td>
@@ -137,8 +141,8 @@ function ListView(props: {
                     <td style={td}>{item.model ?? '-'}</td>
                     <td style={td}>{item.year ?? '-'}</td>
                     <td style={td}>{item.vin ?? '-'}</td>
-                    <td style={td}><span style={{ padding: '0.15rem 0.6rem', borderRadius: 12, fontSize: '0.8rem', background: STATUS_COLORS[status] ?? '#f0f0f0' }}>{status}</span></td>
-                    <td style={td}>{item.published ? 'Yes' : 'No'}</td>
+                    <td style={td}><span style={{ padding: '0.15rem 0.6rem', borderRadius: 12, fontSize: '0.8rem', background: STATUS_COLORS[itemStatus] ?? '#f0f0f0' }}>{itemStatus}</span></td>
+                    <td style={td}><span style={{ padding: '0.15rem 0.6rem', borderRadius: 12, fontSize: '0.8rem', background: STATUS_COLORS[evalStatus] ?? '#f0f0f0' }}>{evalStatus}</span></td>
                   </tr>
                 );
               })}
