@@ -246,6 +246,20 @@ function DetailView({ item, onBack }: { item: Item | null; onBack: () => void })
     }
   };
 
+  const publish = async () => {
+    if (!item) return;
+    setReqBusy(true); setMsg(null);
+    try {
+      const res = await fetch(`${API_URL}/items/${item.id}/publish`, { method: 'POST' });
+      if (!res.ok) throw new Error('Request failed: ' + res.status);
+      setMsg('Item published.');
+    } catch (e) {
+      setMsg('Publish failed: ' + (e as Error).message);
+    } finally {
+      setReqBusy(false);
+    }
+  };
+
   const fields = current;
   const hasAppraisal = evals.length > 0;
 
@@ -279,6 +293,11 @@ function DetailView({ item, onBack }: { item: Item | null; onBack: () => void })
               {!isNew && !hasAppraisal && (
                 <button onClick={requestAppraisal} disabled={reqBusy} style={btnSecondary}>
                   {reqBusy ? 'Requesting...' : 'Request Appraisal'}
+                </button>
+              )}
+              {!isNew && (
+                <button onClick={publish} disabled={reqBusy} style={btnPrimary}>
+                  {reqBusy ? 'Publishing...' : 'Publish'}
                 </button>
               )}
               {msg && <span style={{ fontSize: '0.85rem', color: '#666' }}>{msg}</span>}
